@@ -1,155 +1,149 @@
-
--- LocalScript - Place this in StarterPlayer > StarterPlayerScripts or StarterGui
+-- Roblox Client-Side UI Layout Manager
+-- Arranges multiple UIs in a grid and adds auto-scrolling
 
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- UI names to manage
-local uiNames = {
-    "Gear_Shop",
-    "Seed_Shop", 
-    "SeasonPassUI",
-    "PetShop_UI"
+-- Configuration
+local UI_NAMES = {
+	"Gear_Shop",
+	"Seed_Shop", 
+	"SeasonPassUI",
+	"PetShop_UI"
 }
 
--- Configuration
-local GRID_COLUMNS = 2 -- Number of UIs per row
-local UI_PADDING = 10 -- Spacing between UIs
-local SCREEN_MARGIN = 20 -- Margin from screen edges
-local SCROLL_SPEED = 0.3 -- Lower = slower scrolling
+local GRID_COLUMNS = 2
+local UI_PADDING = 15
+local SCROLL_SPEED = 0.5
+local UI_SCALE = 0.45 -- Scale down to 45% of original size
 
--- Function to find UI and make it visible
-local function findAndShowUI(uiName)
-    local ui = playerGui:FindFirstChild(uiName)
-    if ui then
-        ui.Enabled = true
-        return ui
-    end
-    return nil
-end
-
--- Function to find ScrollingFrame within a UI
-local function findScrollingFrame(gui)
-    for _, descendant in pairs(gui:GetDescendants()) do
-        if descendant:IsA("ScrollingFrame") then
-            return descendant
-        end
-    end
-    return nil
-end
-
--- Function to add automatic scrolling to a ScrollingFrame
-local function addAutoScroll(scrollingFrame)
-    local scrollingUp = true
-    local scrollSpeed = SCROLL_SPEED
-    
-    local connection
-    connection = RunService.RenderStepped:Connect(function(deltaTime)
-        if not scrollingFrame or not scrollingFrame.Parent then
-            connection:Disconnect()
-            return
-        end
-        
-        local canvasSize = scrollingFrame.AbsoluteCanvasSize.Y
-        local windowSize = scrollingFrame.AbsoluteWindowSize.Y
-        local maxScroll = math.max(0, canvasSize - windowSize)
-        
-        if maxScroll > 0 then
-            local currentPosition = scrollingFrame.CanvasPosition.Y
-            
-            -- Scroll up
-            if scrollingUp then
-                currentPosition = currentPosition - scrollSpeed
-                if currentPosition <= 0 then
-                    currentPosition = 0
-                    scrollingUp = false
-                    wait(0.5) -- Pause at top
-                end
-            -- Scroll down
-            else
-                currentPosition = currentPosition + scrollSpeed
-                if currentPosition >= maxScroll then
-                    currentPosition = maxScroll
-                    scrollingUp = true
-                    wait(0.5) -- Pause at bottom
-                end
-            end
-            
-            scrollingFrame.CanvasPosition = Vector2.new(0, currentPosition)
-        end
-    end)
-end
-
--- Function to arrange UIs in a grid layout
-local function arrangeUIsInGrid(uis)
-    local screenSize = workspace.CurrentCamera.ViewportSize
-    
-    -- Calculate UI size
-    local totalColumns = math.min(GRID_COLUMNS, #uis)
-    local rows = math.ceil(#uis / totalColumns)
-    
-    local availableWidth = screenSize.X - (SCREEN_MARGIN * 2) - (UI_PADDING * (totalColumns - 1))
-    local availableHeight = screenSize.Y - (SCREEN_MARGIN * 2) - (UI_PADDING * (rows - 1))
-    
-    local uiWidth = availableWidth / totalColumns
-    local uiHeight = availableHeight / rows
-    
-    -- Position each UI
-    for index, ui in ipairs(uis) do
-        local frame = ui:FindFirstChildOfClass("Frame") or ui:FindFirstChildOfClass("ScreenGui")
-        
-        if frame and frame:IsA("Frame") then
-            local row = math.floor((index - 1) / totalColumns)
-            local col = (index - 1) % totalColumns
-            
-            local xPos = SCREEN_MARGIN + (col * (uiWidth + UI_PADDING))
-            local yPos = SCREEN_MARGIN + (row * (uiHeight + UI_PADDING))
-            
-            -- Resize and reposition the frame
-            frame.Size = UDim2.new(0, uiWidth, 0, uiHeight)
-            frame.Position = UDim2.new(0, xPos, 0, yPos)
-            frame.AnchorPoint = Vector2.new(0, 0)
-            
-            -- Find and add auto-scroll to ScrollingFrames
-            local scrollingFrame = findScrollingFrame(frame)
-            if scrollingFrame then
-                addAutoScroll(scrollingFrame)
-            end
-        end
-    end
-end
-
--- Main execution
-wait(1) -- Wait for UIs to load
+-- Wait for all UIs to load
+wait(1)
 
 local foundUIs = {}
 
 -- Find all UIs
-for _, uiName in ipairs(uiNames) do
-    local ui = findAndShowUI(uiName)
-    if ui then
-        table.insert(foundUIs, ui)
-        print("✓ Found and enabled:", uiName)
-    else
-        warn("✗ Could not find UI:", uiName)
-    end
+for _, uiName in ipairs(UI_NAMES) do
+	local ui = playerGui:FindFirstChild(uiName)
+	if ui then
+		table.insert(foundUIs, ui)
+		print("[v0] Found UI:", uiName)
+	else
+		warn("[v0] Could not find UI:", uiName)
+	end
 end
 
--- Arrange them if we found any
-if #foundUIs > 0 then
-    arrangeUIsInGrid(foundUIs)
-    print("🎨 Arranged", #foundUIs, "UIs in grid layout with auto-scrolling!")
-else
-    warn("❌ No UIs found to arrange!")
+if #foundUIs == 0 then
+	warn("[v0] No UIs found!")
+	return
 end
+
+-- Calculate layout
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "UILayoutManager"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local function arrangeUIs()
+	local viewportSize = workspace.CurrentCamera.ViewportSize
+	local usableWidth = viewportSize.X - (UI_PADDING * (GRID_COLUMNS + 1))
+	local uiWidth = (usableWidth / GRID_COLUMNS) 
+	local uiHeight = uiWidth * 0.8 -- Maintain aspect ratio
+	
+	for index, ui in ipairs(foundUIs) do
+		-- Calculate grid position
+		local column = (index - 1) % GRID_COLUMNS
+		local row = math.floor((index - 1) / GRID_COLUMNS)
+		
+		local xPos = UI_PADDING + (column * (uiWidth + UI_PADDING))
+		local yPos = UI_PADDING + (row * (uiHeight + UI_PADDING))
+		
+		-- Find the main frame to resize
+		local mainFrame = ui:FindFirstChildWhichIsA("Frame") or ui:FindFirstChildWhichIsA("ImageLabel") or ui:FindFirstChildWhichIsA("ScrollingFrame")
+		
+		if mainFrame then
+			-- Store original size if not already stored
+			if not mainFrame:GetAttribute("OriginalSizeX") then
+				mainFrame:SetAttribute("OriginalSizeX", mainFrame.Size.X.Offset)
+				mainFrame:SetAttribute("OriginalSizeY", mainFrame.Size.Y.Offset)
+			end
+			
+			-- Resize with scale to maintain proportions
+			mainFrame.Size = UDim2.new(0, uiWidth, 0, uiHeight)
+			mainFrame.Position = UDim2.new(0, xPos, 0, yPos)
+			
+			-- Apply UIScale to children to prevent breaking
+			local uiScale = mainFrame:FindFirstChildOfClass("UIScale")
+			if not uiScale then
+				uiScale = Instance.new("UIScale")
+				uiScale.Parent = mainFrame
+			end
+			uiScale.Scale = UI_SCALE
+			
+			print("[v0] Arranged:", ui.Name, "at position", xPos, yPos)
+		end
+	end
+end
+
+-- Initial arrangement
+arrangeUIs()
 
 -- Re-arrange on screen resize
-workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-    if #foundUIs > 0 then
-        arrangeUIsInGrid(foundUIs)
-    end
+workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(arrangeUIs)
+
+-- Auto-scroll function
+local scrollDirections = {}
+
+local function findAllScrollingFrames(parent)
+	local scrollFrames = {}
+	for _, child in ipairs(parent:GetDescendants()) do
+		if child:IsA("ScrollingFrame") then
+			table.insert(scrollFrames, child)
+			scrollDirections[child] = 1 -- 1 = down, -1 = up
+			print("[v0] Found ScrollingFrame in:", parent.Name)
+		end
+	end
+	return scrollFrames
+end
+
+-- Find all scrolling frames in all UIs
+local allScrollFrames = {}
+for _, ui in ipairs(foundUIs) do
+	local frames = findAllScrollingFrames(ui)
+	for _, frame in ipairs(frames) do
+		table.insert(allScrollFrames, frame)
+	end
+end
+
+-- Auto-scroll logic
+RunService.RenderStepped:Connect(function(deltaTime)
+	for _, scrollFrame in ipairs(allScrollFrames) do
+		if scrollFrame and scrollFrame.Parent then
+			local canvasSize = scrollFrame.CanvasSize.Y.Offset
+			local frameSize = scrollFrame.AbsoluteSize.Y
+			local maxScroll = math.max(0, canvasSize - frameSize)
+			
+			if maxScroll > 0 then
+				local direction = scrollDirections[scrollFrame]
+				local newPosition = scrollFrame.CanvasPosition.Y + (SCROLL_SPEED * direction)
+				
+				-- Reverse direction at boundaries
+				if newPosition >= maxScroll then
+					scrollDirections[scrollFrame] = -1
+					newPosition = maxScroll
+				elseif newPosition <= 0 then
+					scrollDirections[scrollFrame] = 1
+					newPosition = 0
+				end
+				
+				scrollFrame.CanvasPosition = Vector2.new(0, newPosition)
+			end
+		end
+	end
 end)
+
+print("[v0] UI Layout Manager initialized with", #foundUIs, "UIs and", #allScrollFrames, "scrolling frames!")
