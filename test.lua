@@ -19,8 +19,8 @@ local UI_NAMES = {
 local UI_PADDING = 20
 -- Reduced scroll speed for smoother, slower scrolling
 local SCROLL_SPEED = 0.2
--- Increased UI scale from 50% to 70% to make UIs bigger
-local UI_SCALE = 0.7
+-- Increased UI scale from 50% to 85% to make UIs bigger
+local UI_SCALE = 0.85
 
 -- Wait for all UIs to load
 wait(1)
@@ -98,12 +98,22 @@ workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(arrange
 local scrollDirections = {}
 local allScrollFrames = {}
 
-for _, ui in ipairs(foundUIs) do
-	for _, descendant in ipairs(ui:GetDescendants()) do
-		if descendant:IsA("ScrollingFrame") then
+-- Enhanced scroll frame detection - scans ALL PlayerGui descendants to catch every ScrollingFrame
+for _, descendant in ipairs(playerGui:GetDescendants()) do
+	if descendant:IsA("ScrollingFrame") then
+		-- Check if this ScrollingFrame belongs to one of our managed UIs
+		local isOurUI = false
+		for _, ui in ipairs(foundUIs) do
+			if descendant:IsDescendantOf(ui) then
+				isOurUI = true
+				break
+			end
+		end
+		
+		if isOurUI then
 			table.insert(allScrollFrames, descendant)
 			scrollDirections[descendant] = 1
-			print("[v0] Found ScrollingFrame in:", ui.Name)
+			print("[v0] Found and will auto-scroll:", descendant:GetFullName())
 		end
 	end
 end
