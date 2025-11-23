@@ -17,8 +17,10 @@ local UI_NAMES = {
 }
 
 local UI_PADDING = 20
-local SCROLL_SPEED = 0.5
-local UI_SCALE = 0.5 -- Scale down to 50% of original size
+-- Reduced scroll speed for smoother, slower scrolling
+local SCROLL_SPEED = 0.2
+-- Increased UI scale from 50% to 70% to make UIs bigger
+local UI_SCALE = 0.7
 
 -- Wait for all UIs to load
 wait(1)
