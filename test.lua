@@ -1,5 +1,5 @@
 -- Roblox Client-Side UI Layout Manager
--- Arranges multiple UIs in a grid and adds auto-scrolling
+-- Arranges multiple UIs in corners and adds auto-scrolling
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -16,10 +16,9 @@ local UI_NAMES = {
 	"PetShop_UI"
 }
 
-local GRID_COLUMNS = 2
-local UI_PADDING = 15
+local UI_PADDING = 20
 local SCROLL_SPEED = 0.5
-local UI_SCALE = 0.45 -- Scale down to 45% of original size
+local UI_SCALE = 0.5 -- Scale down to 50% of original size
 
 -- Wait for all UIs to load
 wait(1)
@@ -42,25 +41,24 @@ if #foundUIs == 0 then
 	return
 end
 
--- Calculate layout
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "UILayoutManager"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = playerGui
+-- Corner positions array: top-left, top-right, bottom-left, bottom-right, then repeat
+local cornerPositions = {
+	{anchor = Vector2.new(0, 0), position = UDim2.new(0, UI_PADDING, 0, UI_PADDING)}, -- Top-left
+	{anchor = Vector2.new(1, 0), position = UDim2.new(1, -UI_PADDING, 0, UI_PADDING)}, -- Top-right
+	{anchor = Vector2.new(0, 1), position = UDim2.new(0, UI_PADDING, 1, -UI_PADDING)}, -- Bottom-left
+	{anchor = Vector2.new(1, 1), position = UDim2.new(1, -UI_PADDING, 1, -UI_PADDING)}, -- Bottom-right
+}
 
 local function arrangeUIs()
 	local viewportSize = workspace.CurrentCamera.ViewportSize
-	local usableWidth = viewportSize.X - (UI_PADDING * (GRID_COLUMNS + 1))
-	local uiWidth = (usableWidth / GRID_COLUMNS) 
-	local uiHeight = uiWidth * 0.8 -- Maintain aspect ratio
+	-- Calculate UI size as percentage of screen
+	local uiWidth = viewportSize.X * 0.35 -- 35% of screen width
+	local uiHeight = viewportSize.Y * 0.45 -- 45% of screen height
 	
 	for index, ui in ipairs(foundUIs) do
-		-- Calculate grid position
-		local column = (index - 1) % GRID_COLUMNS
-		local row = math.floor((index - 1) / GRID_COLUMNS)
-		
-		local xPos = UI_PADDING + (column * (uiWidth + UI_PADDING))
-		local yPos = UI_PADDING + (row * (uiHeight + UI_PADDING))
+		-- Get corner position (cycle through corners)
+		local cornerIndex = ((index - 1) % #cornerPositions) + 1
+		local corner = cornerPositions[cornerIndex]
 		
 		-- Find the main frame to resize
 		local mainFrame = ui:FindFirstChildWhichIsA("Frame") or ui:FindFirstChildWhichIsA("ImageLabel") or ui:FindFirstChildWhichIsA("ScrollingFrame")
@@ -72,9 +70,12 @@ local function arrangeUIs()
 				mainFrame:SetAttribute("OriginalSizeY", mainFrame.Size.Y.Offset)
 			end
 			
-			-- Resize with scale to maintain proportions
+			-- Set anchor point for corner positioning
+			mainFrame.AnchorPoint = corner.anchor
+			
+			-- Resize and position in corner
 			mainFrame.Size = UDim2.new(0, uiWidth, 0, uiHeight)
-			mainFrame.Position = UDim2.new(0, xPos, 0, yPos)
+			mainFrame.Position = corner.position
 			
 			-- Apply UIScale to children to prevent breaking
 			local uiScale = mainFrame:FindFirstChildOfClass("UIScale")
@@ -84,7 +85,7 @@ local function arrangeUIs()
 			end
 			uiScale.Scale = UI_SCALE
 			
-			print("[v0] Arranged:", ui.Name, "at position", xPos, yPos)
+			print("[v0] Arranged:", ui.Name, "in corner", cornerIndex)
 		end
 	end
 end
