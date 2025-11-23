@@ -17,8 +17,9 @@ local UI_NAMES = {
 
 local UI_PADDING = 20
 -- Increased scroll speed to make scrolling more visible
-local SCROLL_SPEED = 0.8
+local SCROLL_SPEED = 2.0 -- Faster scrolling so you can see it working
 local UI_SCALE = 0.75
+local SCROLL_PAUSE_TIME = 1.5 -- Pause at top and bottom
 
 -- Wait for all UIs to load
 wait(1)
@@ -87,7 +88,9 @@ workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(arrange
 -- Simplified and fixed scrolling system
 local scrollFrames = {}
 local scrollDirection = 1
-local scrollTime = 0
+local scrollProgress = 0
+local isPaused = false
+local pauseTimer = 0
 
 -- Find ALL ScrollingFrames in the managed UIs
 local function findScrollFrames()
@@ -96,9 +99,9 @@ local function findScrollFrames()
 	for _, ui in ipairs(foundUIs) do
 		for _, descendant in ipairs(ui:GetDescendants()) do
 			if descendant:IsA("ScrollingFrame") then
-				-- Enable scrolling and make scrollbar visible
+				-- Keep scrolling enabled so user can also manually scroll
 				descendant.ScrollingEnabled = true
-				descendant.ScrollBarThickness = 8
+				descendant.ScrollBarThickness = 10
 				
 				table.insert(scrollFrames, descendant)
 				print("[v0] Found ScrollingFrame in:", ui.Name, "- Canvas:", descendant.CanvasSize.Y.Offset, "Frame:", descendant.AbsoluteSize.Y)
@@ -111,36 +114,55 @@ end
 
 findScrollFrames()
 
--- Rescan every 3 seconds for new frames
+-- Rescan every 5 seconds for new frames
 spawn(function()
-	while wait(3) do
+	while wait(5) do
+		local oldCount = #scrollFrames
 		findScrollFrames()
+		if #scrollFrames ~= oldCount then
+			print("[v0] Scroll frame count changed from", oldCount, "to", #scrollFrames)
+		end
 	end
 end)
 
--- Auto-scroll all frames together smoothly
+-- Improved auto-scroll with smooth looping and pauses at top/bottom
 RunService.Heartbeat:Connect(function(dt)
 	if #scrollFrames == 0 then return end
 	
-	scrollTime = scrollTime + (dt * scrollDirection * SCROLL_SPEED)
+	-- Handle pause at top/bottom
+	if isPaused then
+		pauseTimer = pauseTimer + dt
+		if pauseTimer >= SCROLL_PAUSE_TIME then
+			isPaused = false
+			pauseTimer = 0
+			scrollDirection = scrollDirection * -1 -- Reverse direction
+		end
+		return
+	end
 	
-	-- Ping-pong between 0 and 1 for smooth up/down motion
-	if scrollTime >= 1 then
-		scrollTime = 1
-		scrollDirection = -1
-	elseif scrollTime <= 0 then
-		scrollTime = 0
-		scrollDirection = 1
+	-- Update scroll progress
+	scrollProgress = scrollProgress + (dt * scrollDirection * SCROLL_SPEED)
+	
+	-- Check if we hit the boundaries
+	if scrollProgress >= 10 then -- Scroll down completely
+		scrollProgress = 10
+		isPaused = true
+	elseif scrollProgress <= 0 then -- Scroll up completely
+		scrollProgress = 0
+		isPaused = true
 	end
 	
 	-- Apply scroll to ALL frames at the same time
 	for _, frame in ipairs(scrollFrames) do
 		if frame and frame.Parent then
 			local maxScroll = math.max(0, frame.CanvasSize.Y.Offset - frame.AbsoluteSize.Y)
-			local targetY = scrollTime * maxScroll
-			frame.CanvasPosition = Vector2.new(0, targetY)
+			if maxScroll > 0 then
+				-- Convert 0-10 range to 0-maxScroll range
+				local targetY = (scrollProgress / 10) * maxScroll
+				frame.CanvasPosition = Vector2.new(frame.CanvasPosition.X, targetY)
+			end
 		end
 	end
 end)
 
-print("[v0] UI Layout Manager initialized! Scrolling", #scrollFrames, "frames")
+print("[v0] UI Layout Manager initialized! Auto-scrolling", #scrollFrames, "frames with smooth looping")
