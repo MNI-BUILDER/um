@@ -18,7 +18,7 @@ local UI_NAMES = {
 local UI_PADDING = 20
 -- Increased scroll speed to make scrolling more visible
 local SCROLL_SPEED = 2.0 -- Faster scrolling so you can see it working
-local UI_SCALE = 0.75
+local UI_SCALE = 0.70
 local SCROLL_PAUSE_TIME = 1.5 -- Pause at top and bottom
 
 -- Wait for all UIs to load
@@ -127,7 +127,10 @@ end)
 
 -- Improved auto-scroll with smooth looping and pauses at top/bottom
 RunService.Heartbeat:Connect(function(dt)
-	if #scrollFrames == 0 then return end
+	if #scrollFrames == 0 then 
+		print("[v0] DEBUG: No scroll frames to scroll!")
+		return 
+	end
 	
 	-- Handle pause at top/bottom
 	if isPaused then
@@ -136,6 +139,7 @@ RunService.Heartbeat:Connect(function(dt)
 			isPaused = false
 			pauseTimer = 0
 			scrollDirection = scrollDirection * -1 -- Reverse direction
+			print("[v0] DEBUG: Direction changed to", scrollDirection > 0 and "DOWN" or "UP")
 		end
 		return
 	end
@@ -147,9 +151,11 @@ RunService.Heartbeat:Connect(function(dt)
 	if scrollProgress >= 10 then -- Scroll down completely
 		scrollProgress = 10
 		isPaused = true
+		print("[v0] DEBUG: Reached BOTTOM, pausing...")
 	elseif scrollProgress <= 0 then -- Scroll up completely
 		scrollProgress = 0
 		isPaused = true
+		print("[v0] DEBUG: Reached TOP, pausing...")
 	end
 	
 	-- Apply scroll to ALL frames at the same time
@@ -160,6 +166,9 @@ RunService.Heartbeat:Connect(function(dt)
 				-- Convert 0-10 range to 0-maxScroll range
 				local targetY = (scrollProgress / 10) * maxScroll
 				frame.CanvasPosition = Vector2.new(frame.CanvasPosition.X, targetY)
+				print("[v0] DEBUG: Scrolling", frame.Parent.Name, "- Progress:", math.floor(scrollProgress), "TargetY:", math.floor(targetY), "MaxScroll:", math.floor(maxScroll))
+			else
+				print("[v0] DEBUG:", frame.Parent.Name, "has NO scrollable content! MaxScroll:", maxScroll)
 			end
 		end
 	end
