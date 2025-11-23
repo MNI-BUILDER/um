@@ -1,5 +1,5 @@
--- FULLY DEFENSIVE UI LAYOUT + AUTO-SCROLL (SeasonPass Store fix included)
--- Put this in StarterPlayerScripts (LocalScript)
+-- FINAL FIX: Aggressive + Defensive Auto-Scroll (uses AbsoluteCanvasSize first)
+-- Paste into StarterPlayerScripts (LocalScript)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -13,7 +13,7 @@ local SCROLL_SPEED = 0.3
 local UI_SCALE = 0.76
 local SCROLL_PAUSE_TIME = 1.0
 local RESCAN_INTERVAL = 1      -- seconds
-local DEBUG = true            -- set true to see prints
+local DEBUG = false            -- set true to see console debug
 
 local function dbg(...)
 	if DEBUG then print("[AutoScroll]", ...) end
@@ -75,7 +75,7 @@ end
 arrangeUIs()
 if workspace.CurrentCamera then workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(arrangeUIs) end
 
--- ---------- scrolling frames management ----------
+-- ---------- managed frames ----------
 local managed = {} -- { { frame = ScrollingFrame, layout = layoutObj, currentY = number } }
 
 local function findLayout(sf)
@@ -93,47 +93,43 @@ local function addManaged(sf)
 	sf.ScrollBarThickness = 8
 	dbg("Managed added:", sf:GetFullName())
 
-	-- if layout exists, keep CanvasSize updated
+	-- Keep CanvasSize updated from layout if layout exists
 	if layout then
-		local function updateCanvasFromLayout()
-			-- grid: set both X and Y (defensive)
-			if layout:IsA("UIGridLayout") then
-				local acs = layout.AbsoluteContentSize
-				if acs and (acs.X > 0 or acs.Y > 0) then
+		local function updateCanvas()
+			local acs = layout.AbsoluteContentSize
+			if acs and (acs.Y > 0 or acs.X > 0) then
+				if layout:IsA("UIGridLayout") then
 					sf.CanvasSize = UDim2.new(0, acs.X, 0, acs.Y)
-				end
-			else
-				local acs = layout.AbsoluteContentSize
-				if acs and acs.Y > 0 then
+				else
 					sf.CanvasSize = UDim2.new(0, 0, 0, acs.Y)
 				end
 			end
 		end
-		layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvasFromLayout)
-		task.defer(updateCanvasFromLayout)
+		layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvas)
+		task.defer(updateCanvas)
 	end
 
-	-- if layout not present, also listen for children changes and update CanvasSize fallback
+	-- Fallback: if children change, try to recalc canvas / detect layout later
 	sf.DescendantAdded:Connect(function()
-		task.defer(function() -- give time for layout to update if any
-			-- attempt to attach layout if it appears later
+		task.defer(function()
 			if not entry.layout then
 				entry.layout = findLayout(sf)
 				if entry.layout then
-					dbg("Layout found later for:", sf:GetFullName())
-					-- hook new layout
+					dbg("Found layout later for:", sf:GetFullName())
 					entry.layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+						local acs = entry.layout.AbsoluteContentSize
 						if entry.layout:IsA("UIGridLayout") then
-							sf.CanvasSize = UDim2.new(0, entry.layout.AbsoluteContentSize.X, 0, entry.layout.AbsoluteContentSize.Y)
+							sf.CanvasSize = UDim2.new(0, acs.X, 0, acs.Y)
 						else
-							sf.CanvasSize = UDim2.new(0, 0, 0, entry.layout.AbsoluteContentSize.Y)
+							sf.CanvasSize = UDim2.new(0, 0, 0, acs.Y)
 						end
 					end)
 					task.defer(function()
+						local acs = entry.layout.AbsoluteContentSize
 						if entry.layout:IsA("UIGridLayout") then
-							sf.CanvasSize = UDim2.new(0, entry.layout.AbsoluteContentSize.X, 0, entry.layout.AbsoluteContentSize.Y)
+							sf.CanvasSize = UDim2.new(0, acs.X, 0, acs.Y)
 						else
-							sf.CanvasSize = UDim2.new(0, 0, 0, entry.layout.AbsoluteContentSize.Y)
+							sf.CanvasSize = UDim2.new(0, 0, 0, acs.Y)
 						end
 					end)
 				end
@@ -142,26 +138,28 @@ local function addManaged(sf)
 	end)
 end
 
+-- ---------- content / max scroll helpers ----------
 local function computeContentHeight(entry)
 	local f = entry.frame
 	if not f then return 0 end
 
-	-- prefer AbsoluteCanvasSize if available and > 0
+	-- 1) Prefer AbsoluteCanvasSize (very reliable)
 	if f.AbsoluteCanvasSize and f.AbsoluteCanvasSize.Y and f.AbsoluteCanvasSize.Y > 0 then
 		return f.AbsoluteCanvasSize.Y
 	end
 
-	-- prefer layout absolutecontentsize
+	-- 2) Prefer layout AbsoluteContentSize
 	if entry.layout and entry.layout.AbsoluteContentSize and entry.layout.AbsoluteContentSize.Y > 0 then
 		return entry.layout.AbsoluteContentSize.Y
 	end
 
-	-- fallback: sum children heights (account for Layouts margins partly)
+	-- 3) Sum children heights as last resort
 	local total = 0
 	for _, child in ipairs(f:GetChildren()) do
-		if child:IsA("Frame") or child:IsA("ImageLabel") or child:IsA("TextLabel") or child:IsA("ImageButton") then
+		-- count common UI elements; ignore layout objects themselves
+		if child:IsA("GuiObject") and not child:IsA("UILayout") then
 			if child.AbsoluteSize and child.AbsoluteSize.Y then
-				total = total + child.AbsoluteSize.Y
+				total = total + math.max(0, child.AbsoluteSize.Y)
 			end
 		end
 	end
@@ -171,42 +169,47 @@ end
 local function getMaxScroll(entry)
 	local f = entry.frame
 	if not f or not f.Parent then return 0 end
-	if f.AbsoluteWindowSize and f.AbsoluteWindowSize.Y and f.AbsoluteWindowSize.Y > 0 and f.AbsoluteCanvasSize and f.AbsoluteCanvasSize.Y then
-		return math.max(0, f.AbsoluteCanvasSize.Y - f.AbsoluteWindowSize.Y)
+
+	-- Prefer AbsoluteCanvasSize & AbsoluteWindowSize if available
+	if f.AbsoluteCanvasSize and f.AbsoluteWindowSize and f.AbsoluteCanvasSize.Y and f.AbsoluteWindowSize.Y then
+		if f.AbsoluteWindowSize.Y > 0 then
+			return math.max(0, f.AbsoluteCanvasSize.Y - f.AbsoluteWindowSize.Y)
+		end
 	end
 
+	-- Fallback to contentHeight - frame size (AbsoluteSize)
+	local content = computeContentHeight(entry)
 	if f.AbsoluteSize and f.AbsoluteSize.Y and f.AbsoluteSize.Y > 0 then
-		local content = computeContentHeight(entry)
 		return math.max(0, content - f.AbsoluteSize.Y)
 	end
 
 	return 0
 end
 
--- aggressive rescan that also tries to find the SeasonPass Store path
+-- aggressive rescan that guarantees SeasonPass Store is found
 local function rescanAll()
-	-- scan known UIs
 	for _, ui in ipairs(foundUIs) do
 		for _, desc in ipairs(ui:GetDescendants()) do
 			if desc:IsA("ScrollingFrame") then
 				addManaged(desc)
 			end
 		end
-		-- If SeasonPassUI specifically present, search for "Store" path
+
+		-- Extra: try to find 'Store' nodes under SeasonPassUI and attach inner ScrollingFrame
 		if ui.Name == "SeasonPassUI" then
-			local frame = ui:FindFirstChild("SeasonPassFrame", true) -- not real API; fallback below
-			-- Roblox doesn't have FindFirstChild with deep search built-in, so do manual:
-			-- manual deep find for "Store" container (defensive)
 			for _, d in ipairs(ui:GetDescendants()) do
-				if d.Name == "Store" and d:IsA("ScrollingFrame") then
-					addManaged(d)
-					dbg("SeasonPass Store found by name 'Store'")
-				elseif d.Name == "Store" then
-					-- store might be a frame that contains a ScrollingFrame inside
-					for _, inner in ipairs(d:GetDescendants()) do
-						if inner:IsA("ScrollingFrame") then
-							addManaged(inner)
-							dbg("SeasonPass Store -> found inner ScrollingFrame")
+				if d.Name == "Store" then
+					-- If the Store itself is the ScrollingFrame
+					if d:IsA("ScrollingFrame") then
+						addManaged(d)
+						dbg("Attached Store ScrollingFrame directly")
+					else
+						-- Look inside Store for a ScrollingFrame
+						for _, inner in ipairs(d:GetDescendants()) do
+							if inner:IsA("ScrollingFrame") then
+								addManaged(inner)
+								dbg("Attached inner ScrollingFrame inside Store")
+							end
 						end
 					end
 				end
@@ -215,7 +218,7 @@ local function rescanAll()
 	end
 end
 
--- initial scan + periodic rescan (handles late-spawned UI)
+-- initial scan + periodic rescan
 rescanAll()
 task.spawn(function()
 	while true do
@@ -225,12 +228,12 @@ task.spawn(function()
 end)
 
 -- ---------- smooth auto-scroll loop ----------
-local scrollDir = 1
+local direction = 1
 local progress = 0
 local paused = false
 local pauseTimer = 0
 
-local function progressToTargetY(p, entry)
+local function progressToY(p, entry)
 	local max = getMaxScroll(entry)
 	if max <= 0 then return 0 end
 	p = math.clamp(p, 0, 1)
@@ -240,22 +243,20 @@ end
 RunService.RenderStepped:Connect(function(dt)
 	if #managed == 0 then return end
 
-	-- pause handling
 	if paused then
 		pauseTimer = pauseTimer + dt
 		if pauseTimer >= SCROLL_PAUSE_TIME then
 			paused = false
 			pauseTimer = 0
-			scrollDir = -scrollDir
-			dbg("resume, dir:", scrollDir)
+			direction = -direction
+			dbg("Resume direction:", direction)
 		else
 			return
 		end
 	end
 
-	-- advance progress (normalized)
-	local normalizedSpeed = SCROLL_SPEED -- already small
-	progress = progress + (dt * scrollDir * normalizedSpeed)
+	-- advance normalized progress
+	progress = progress + (dt * direction * SCROLL_SPEED)
 
 	if progress >= 1 then
 		progress = 1
@@ -267,30 +268,32 @@ RunService.RenderStepped:Connect(function(dt)
 
 	for _, entry in ipairs(managed) do
 		local f = entry.frame
-		if not f or not f.Parent then goto continue end
-		-- only apply if absolute sizes ready
+		if not f or not f.Parent then goto cont end
+
+		-- ensure frame has size
 		if f.AbsoluteSize and f.AbsoluteSize.Y > 0 then
 			local maxScroll = getMaxScroll(entry)
 			if maxScroll > 0 then
-				local targetY = progressToTargetY(progress, entry)
-				-- lerp current position for smoothness
+				local targetY = progressToY(progress, entry)
 				entry.currentY = entry.currentY or (f.CanvasPosition and f.CanvasPosition.Y) or 0
-				local lerpAlpha = math.clamp(15 * dt, 0, 1) -- higher = snappier
-				entry.currentY = entry.currentY + (targetY - entry.currentY) * lerpAlpha
-				-- write integer-safe
+				-- smooth lerp
+				local alpha = math.clamp(10 * dt, 0, 1)
+				entry.currentY = entry.currentY + (targetY - entry.currentY) * alpha
 				local writeY = math.floor(entry.currentY + 0.5)
-				if f.CanvasPosition == nil then
+				-- Set CanvasPosition defensively
+				local ok, err = pcall(function()
 					f.CanvasPosition = Vector2.new(0, writeY)
-				else
-					f.CanvasPosition = Vector2.new(0, writeY)
+				end)
+				if not ok then
+					dbg("CanvasPosition write failed for", f:GetFullName(), err)
 				end
 			end
 		else
-			-- wait until absolute size ready (most likely first frames render)
-			dbg("Skipping frame (no AbsoluteSize yet):", f:GetFullName())
+			dbg("Waiting for AbsoluteSize:", f:GetFullName())
 		end
-		::continue::
+
+		::cont::
 	end
 end)
 
-dbg("Defensive auto-scroll loaded. Managed count will grow after scanning.")
+dbg("Auto-scroll loaded. Managed frames will populate after scanning.")
