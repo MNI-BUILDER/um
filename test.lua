@@ -1,5 +1,5 @@
 -- Roblox Client-Side UI Layout Manager
--- Arranges multiple UIs in corners and adds one-way auto-scrolling
+-- Arranges multiple UIs in corners and adds auto-scrolling
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -8,16 +8,24 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 -- Configuration
-local UI_NAMES = { "Gear_Shop", "Seed_Shop", "SeasonPassUI", "PetShop_UI" }
-local UI_PADDING = 20
-local SCROLL_SPEED = 0.2 -- Slower scrolling for smoother effect
-local UI_SCALE = 0.73
+local UI_NAMES = {
+	"Gear_Shop",
+	"Seed_Shop", 
+	"SeasonPassUI",
+	"PetShop_UI"
+}
 
-wait(1) -- Wait for all UIs to load
+local UI_PADDING = 20
+-- Increased scroll speed to make scrolling more visible
+local SCROLL_SPEED = 0.8
+local UI_SCALE = 0.75
+
+-- Wait for all UIs to load
+wait(1)
 
 local foundUIs = {}
 
--- Find and show all UIs
+-- Find and force show all UIs
 for _, uiName in ipairs(UI_NAMES) do
 	local ui = playerGui:FindFirstChild(uiName)
 	if ui then
@@ -27,9 +35,7 @@ for _, uiName in ipairs(UI_NAMES) do
 			ui.ResetOnSpawn = false
 			ui.IgnoreGuiInset = false
 		end
-		print("[v0] Found and enabled UI:", uiName)
-	else
-		warn("[v0] Could not find UI:", uiName)
+		print("[v0] Found UI:", uiName)
 	end
 end
 
@@ -38,11 +44,12 @@ if #foundUIs == 0 then
 	return
 end
 
+-- Corner positions array
 local cornerPositions = {
-	{anchor = Vector2.new(0, 0), position = UDim2.new(0, UI_PADDING, 0, UI_PADDING)},       -- Top-left
-	{anchor = Vector2.new(1, 0), position = UDim2.new(1, -UI_PADDING, 0, UI_PADDING)},      -- Top-right
-	{anchor = Vector2.new(0, 1), position = UDim2.new(0, UI_PADDING, 1, -UI_PADDING)},      -- Bottom-left
-	{anchor = Vector2.new(1, 1), position = UDim2.new(1, -UI_PADDING, 1, -UI_PADDING)},     -- Bottom-right
+	{anchor = Vector2.new(0, 0), position = UDim2.new(0, UI_PADDING, 0, UI_PADDING)}, -- Top-left
+	{anchor = Vector2.new(1, 0), position = UDim2.new(1, -UI_PADDING, 0, UI_PADDING)}, -- Top-right
+	{anchor = Vector2.new(0, 1), position = UDim2.new(0, UI_PADDING, 1, -UI_PADDING)}, -- Bottom-left
+	{anchor = Vector2.new(1, 1), position = UDim2.new(1, -UI_PADDING, 1, -UI_PADDING)}, -- Bottom-right
 }
 
 local function arrangeUIs()
@@ -53,19 +60,22 @@ local function arrangeUIs()
 	for index, ui in ipairs(foundUIs) do
 		local cornerIndex = ((index - 1) % #cornerPositions) + 1
 		local corner = cornerPositions[cornerIndex]
+		
 		for _, child in ipairs(ui:GetChildren()) do
 			if child:IsA("Frame") or child:IsA("ImageLabel") or child:IsA("ScrollingFrame") then
 				child.Visible = true
 				child.AnchorPoint = corner.anchor
 				child.Size = UDim2.new(0, uiWidth, 0, uiHeight)
 				child.Position = corner.position
+				
 				local uiScale = child:FindFirstChildOfClass("UIScale")
 				if not uiScale then
 					uiScale = Instance.new("UIScale")
 					uiScale.Parent = child
 				end
 				uiScale.Scale = UI_SCALE
-				print("[v0] Arranged:", ui.Name, "->", child.Name, "in corner", cornerIndex)
+				
+				print("[v0] Arranged:", ui.Name, "in corner", cornerIndex)
 			end
 		end
 	end
@@ -74,54 +84,63 @@ end
 arrangeUIs()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(arrangeUIs)
 
--- Scroll management
-local allScrollFrames = {}
-local globalScrollProgress = 0 -- 0 to 100 percent
+-- Simplified and fixed scrolling system
+local scrollFrames = {}
+local scrollDirection = 1
+local scrollTime = 0
 
-local function findAndSetupScrollFrames()
-	allScrollFrames = {}
-	for _, descendant in ipairs(playerGui:GetDescendants()) do
-		if descendant:IsA("ScrollingFrame") then
-			for _, ui in ipairs(foundUIs) do
-				if descendant:IsDescendantOf(ui) then
-					local canvasSize = descendant.CanvasSize.Y.Offset
-					local frameSize = descendant.AbsoluteSize.Y
-					local maxScroll = canvasSize - frameSize
-					if maxScroll > 10 then -- Minimally scrollable
-						table.insert(allScrollFrames, descendant)
-						print("[v0] Found scrollable frame in:", descendant.Parent.Name, "- Max scroll:", maxScroll)
-					end
-					break
-				end
+-- Find ALL ScrollingFrames in the managed UIs
+local function findScrollFrames()
+	scrollFrames = {}
+	
+	for _, ui in ipairs(foundUIs) do
+		for _, descendant in ipairs(ui:GetDescendants()) do
+			if descendant:IsA("ScrollingFrame") then
+				-- Enable scrolling and make scrollbar visible
+				descendant.ScrollingEnabled = true
+				descendant.ScrollBarThickness = 8
+				
+				table.insert(scrollFrames, descendant)
+				print("[v0] Found ScrollingFrame in:", ui.Name, "- Canvas:", descendant.CanvasSize.Y.Offset, "Frame:", descendant.AbsoluteSize.Y)
 			end
 		end
 	end
-	print("[v0] Total ScrollingFrames detected:", #allScrollFrames)
+	
+	print("[v0] Total scrolling frames found:", #scrollFrames)
 end
 
-findAndSetupScrollFrames()
+findScrollFrames()
+
+-- Rescan every 3 seconds for new frames
 spawn(function()
-	while wait(5) do
-		findAndSetupScrollFrames()
+	while wait(3) do
+		findScrollFrames()
 	end
 end)
 
--- One-way scroll (no looping)
-RunService.RenderStepped:Connect(function(deltaTime)
-	if #allScrollFrames == 0 then return end
-	-- Advance until 100%, then stop
-	if globalScrollProgress < 100 then
-		globalScrollProgress = math.min(globalScrollProgress + (SCROLL_SPEED * 60 * deltaTime), 100)
-		for _, scrollFrame in ipairs(allScrollFrames) do
-			if scrollFrame and scrollFrame.Parent then
-				local canvasSize = scrollFrame.CanvasSize.Y.Offset
-				local frameSize = scrollFrame.AbsoluteSize.Y
-				local maxScroll = math.max(0, canvasSize - frameSize)
-				local targetPosition = (globalScrollProgress / 100) * maxScroll
-				scrollFrame.CanvasPosition = Vector2.new(0, targetPosition)
-			end
+-- Auto-scroll all frames together smoothly
+RunService.Heartbeat:Connect(function(dt)
+	if #scrollFrames == 0 then return end
+	
+	scrollTime = scrollTime + (dt * scrollDirection * SCROLL_SPEED)
+	
+	-- Ping-pong between 0 and 1 for smooth up/down motion
+	if scrollTime >= 1 then
+		scrollTime = 1
+		scrollDirection = -1
+	elseif scrollTime <= 0 then
+		scrollTime = 0
+		scrollDirection = 1
+	end
+	
+	-- Apply scroll to ALL frames at the same time
+	for _, frame in ipairs(scrollFrames) do
+		if frame and frame.Parent then
+			local maxScroll = math.max(0, frame.CanvasSize.Y.Offset - frame.AbsoluteSize.Y)
+			local targetY = scrollTime * maxScroll
+			frame.CanvasPosition = Vector2.new(0, targetY)
 		end
 	end
 end)
 
-print("[v0] UI Layout Manager initialized with", #foundUIs, "UIs and", #allScrollFrames, "scrolling frames!")
+print("[v0] UI Layout Manager initialized! Scrolling", #scrollFrames, "frames")
