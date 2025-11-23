@@ -18,9 +18,9 @@ local UI_NAMES = {
 
 local UI_PADDING = 20
 -- Reduced scroll speed for smoother, slower scrolling
-local SCROLL_SPEED = 0.4
+local SCROLL_SPEED = 0.2
 -- Increased UI scale from 50% to 85% to make UIs bigger
-local UI_SCALE = 0.78
+local UI_SCALE = 0.70
 
 -- Wait for all UIs to load
 wait(1)
@@ -94,52 +94,80 @@ arrangeUIs()
 -- Re-arrange on screen resize
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(arrangeUIs)
 
--- Simplified scrolling frame detection
-local scrollDirections = {}
+-- Enhanced scrolling system that continuously checks for new ScrollingFrames
 local allScrollFrames = {}
+-- Using single global scroll progress for all frames
+local globalScrollProgress = 0
+local globalScrollDirection = 1
 
--- Enhanced scroll frame detection - scans ALL PlayerGui descendants to catch every ScrollingFrame
-for _, descendant in ipairs(playerGui:GetDescendants()) do
-	if descendant:IsA("ScrollingFrame") then
-		-- Check if this ScrollingFrame belongs to one of our managed UIs
-		local isOurUI = false
-		for _, ui in ipairs(foundUIs) do
-			if descendant:IsDescendantOf(ui) then
-				isOurUI = true
-				break
+local function findAndSetupScrollFrames()
+	allScrollFrames = {}
+	
+	-- Scan ALL descendants in PlayerGui
+	for _, descendant in ipairs(playerGui:GetDescendants()) do
+		if descendant:IsA("ScrollingFrame") then
+			-- Check if this ScrollingFrame belongs to one of our managed UIs
+			local isOurUI = false
+			for _, ui in ipairs(foundUIs) do
+				if descendant:IsDescendantOf(ui) then
+					isOurUI = true
+					break
+				end
+			end
+			
+			if isOurUI then
+				-- Check if frame is actually scrollable
+				local canvasSize = descendant.CanvasSize.Y.Offset
+				local frameSize = descendant.AbsoluteSize.Y
+				local maxScroll = canvasSize - frameSize
+				
+				if maxScroll > 10 then
+					table.insert(allScrollFrames, descendant)
+					print("[v0] Found scrollable frame in:", descendant.Parent.Name, "- Max scroll:", maxScroll)
+				end
 			end
 		end
-		
-		if isOurUI then
-			table.insert(allScrollFrames, descendant)
-			scrollDirections[descendant] = 1
-			print("[v0] Found and will auto-scroll:", descendant:GetFullName())
-		end
 	end
+	
+	print("[v0] Total ScrollingFrames detected:", #allScrollFrames)
 end
 
--- Auto-scroll logic
+-- Initial scan for ScrollingFrames
+findAndSetupScrollFrames()
+
+-- Re-scan for new ScrollingFrames every 5 seconds (in case UIs load dynamically)
+spawn(function()
+	while wait(5) do
+		findAndSetupScrollFrames()
+	end
+end)
+
+-- Synchronized auto-scroll - all frames scroll together with same progress
 RunService.RenderStepped:Connect(function(deltaTime)
+	if #allScrollFrames == 0 then return end
+	
+	-- Update global scroll progress
+	globalScrollProgress = globalScrollProgress + (SCROLL_SPEED * globalScrollDirection * 60 * deltaTime)
+	
+	-- Reverse direction at boundaries (0 to 100%)
+	if globalScrollProgress >= 100 then
+		globalScrollDirection = -1
+		globalScrollProgress = 100
+	elseif globalScrollProgress <= 0 then
+		globalScrollDirection = 1
+		globalScrollProgress = 0
+	end
+	
+	-- Apply the same scroll percentage to all frames
 	for _, scrollFrame in ipairs(allScrollFrames) do
-		if scrollFrame and scrollFrame.Parent then
+		if scrollFrame and scrollFrame.Parent and scrollFrame.Visible then
 			local canvasSize = scrollFrame.CanvasSize.Y.Offset
 			local frameSize = scrollFrame.AbsoluteSize.Y
 			local maxScroll = math.max(0, canvasSize - frameSize)
 			
-			if maxScroll > 0 then
-				local direction = scrollDirections[scrollFrame]
-				local newPosition = scrollFrame.CanvasPosition.Y + (SCROLL_SPEED * direction)
-				
-				if newPosition >= maxScroll then
-					scrollDirections[scrollFrame] = -1
-					newPosition = maxScroll
-				elseif newPosition <= 0 then
-					scrollDirections[scrollFrame] = 1
-					newPosition = 0
-				end
-				
-				scrollFrame.CanvasPosition = Vector2.new(0, newPosition)
-			end
+			-- Calculate position based on global progress (0-100%)
+			local targetPosition = (globalScrollProgress / 100) * maxScroll
+			scrollFrame.CanvasPosition = Vector2.new(0, targetPosition)
 		end
 	end
 end)
