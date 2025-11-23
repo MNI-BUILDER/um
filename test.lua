@@ -60,10 +60,19 @@ local function arrangeUIs()
 		local cornerIndex = ((index - 1) % #cornerPositions) + 1
 		local corner = cornerPositions[cornerIndex]
 		
+		-- Make sure the UI is visible and enabled
+		ui.Enabled = true
+		if ui:IsA("ScreenGui") then
+			ui.ResetOnSpawn = false
+		end
+		
 		-- Find the main frame to resize
 		local mainFrame = ui:FindFirstChildWhichIsA("Frame") or ui:FindFirstChildWhichIsA("ImageLabel") or ui:FindFirstChildWhichIsA("ScrollingFrame")
 		
 		if mainFrame then
+			-- Make sure the frame is visible
+			mainFrame.Visible = true
+			
 			-- Store original size if not already stored
 			if not mainFrame:GetAttribute("OriginalSizeX") then
 				mainFrame:SetAttribute("OriginalSizeX", mainFrame.Size.X.Offset)
@@ -85,7 +94,16 @@ local function arrangeUIs()
 			end
 			uiScale.Scale = UI_SCALE
 			
-			print("[v0] Arranged:", ui.Name, "in corner", cornerIndex)
+			print("[v0] Arranged:", ui.Name, "in corner", cornerIndex, "- Visible:", mainFrame.Visible, "Size:", mainFrame.Size)
+		else
+			-- If no main frame found, try to make the UI itself visible
+			warn("[v0] No main frame found in:", ui.Name, "- Attempting to show UI directly")
+			for _, child in ipairs(ui:GetChildren()) do
+				if child:IsA("GuiObject") then
+					child.Visible = true
+					print("[v0] Made visible:", child.Name, "in", ui.Name)
+				end
+			end
 		end
 	end
 end
