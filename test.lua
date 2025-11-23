@@ -17,7 +17,7 @@ local UI_NAMES = {
 
 local UI_PADDING = 20
 -- Increased scroll speed to make scrolling more visible
-local SCROLL_SPEED = 2.0 -- Faster scrolling so you can see it working
+local SCROLL_SPEED = 0.5 -- Faster scrolling so you can see it working
 local UI_SCALE = 0.70
 local SCROLL_PAUSE_TIME = 1.5 -- Pause at top and bottom
 
